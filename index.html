@@ -1,32 +1,140 @@
 <!doctype html>
 <html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Prototype</title>
-    <style>
-      body {
-        margin: 0;
-        font-family: Arial, sans-serif;
-        display: grid;
-        place-items: center;
-        min-height: 100vh;
-        background: #0f172a;
-        color: #e2e8f0;
-      }
-      .card {
-        text-align: center;
-        padding: 2rem;
-        border: 1px solid #334155;
-        border-radius: 0.75rem;
-        background: #1e293b;
-      }
-    </style>
-  </head>
-  <body>
-    <main class="card">
-      <h1>Prototype is Netlify-ready</h1>
-      <p>Push succeeded. Connect this repo in Netlify to deploy.</p>
-    </main>
-  </body>
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>PaperMind — AI Research Paper Reader</title>
+  <meta name="description" content="Upload any research paper and instantly convert it into a beautiful interactive concept map powered by AI." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Fira+Code:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+  <!-- ── HEADER ── -->
+  <header class="header">
+    <div class="logo">
+      <span class="logo-icon">🧠</span>
+      <span class="logo-text">PaperMind</span>
+    </div>
+    <nav class="nav-pills">
+      <button class="pill active" onclick="showView('upload')">Upload</button>
+      <button class="pill" onclick="showView('map')" id="mapBtn" disabled>Concept Map</button>
+      <button class="pill" onclick="showView('summary')" id="summaryBtn" disabled>Summary</button>
+    </nav>
+    <div class="header-right">
+      <span class="badge">AI Powered</span>
+    </div>
+  </header>
+
+  <!-- ── UPLOAD VIEW ── -->
+  <section id="view-upload" class="view active">
+    <div class="hero">
+      <h1 class="hero-title">Turn Any Research Paper<br/><span class="gradient-text">Into a Living Concept Map</span></h1>
+      <p class="hero-sub">Upload a PDF or paste text — our AI extracts concepts, relationships, and key insights, then renders them as an interactive network you can explore.</p>
+    </div>
+
+    <div class="upload-area" id="uploadArea">
+      <div class="upload-inner">
+        <div class="upload-icon">📄</div>
+        <p class="upload-title">Drop your PDF here</p>
+        <p class="upload-sub">or</p>
+        <label class="btn-primary" for="fileInput">Choose File</label>
+        <input type="file" id="fileInput" accept=".pdf,.txt" style="display:none" />
+      </div>
+    </div>
+
+    <div class="divider"><span>OR</span></div>
+
+    <div class="paste-box">
+      <label class="paste-label">Paste abstract / full text</label>
+      <textarea id="pasteText" class="paste-textarea" placeholder="Paste your research paper text here...&#10;&#10;e.g. Abstract: This paper presents..."></textarea>
+      <div class="paste-actions">
+        <button class="btn-secondary" onclick="loadDemo()">Load Demo Paper</button>
+        <button class="btn-primary" id="analyzeBtn" onclick="analyze()">✨ Analyze Paper</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── LOADING OVERLAY ── -->
+  <div id="loadingOverlay" class="loading-overlay hidden">
+    <div class="loading-card">
+      <div class="spinner"></div>
+      <p class="loading-title">Analyzing your paper…</p>
+      <p class="loading-sub" id="loadingStatus">Extracting concepts</p>
+      <div class="progress-bar"><div class="progress-fill" id="progressFill"></div></div>
+    </div>
+  </div>
+
+  <!-- ── CONCEPT MAP VIEW ── -->
+  <section id="view-map" class="view">
+    <div class="map-toolbar">
+      <div class="toolbar-left">
+        <button class="tool-btn" onclick="resetZoom()" title="Reset zoom">⟳</button>
+        <button class="tool-btn" onclick="zoomIn()" title="Zoom in">+</button>
+        <button class="tool-btn" onclick="zoomOut()" title="Zoom out">−</button>
+        <span class="sep"></span>
+        <select class="filter-select" id="filterSelect" onchange="filterByCategory()">
+          <option value="all">All Categories</option>
+          <option value="concept">Core Concepts</option>
+          <option value="method">Methods</option>
+          <option value="result">Results</option>
+          <option value="entity">Entities</option>
+        </select>
+      </div>
+      <div class="toolbar-center">
+        <input type="text" class="search-node" id="searchNode" placeholder="🔍 Search nodes…" oninput="searchNodes()" />
+      </div>
+      <div class="toolbar-right">
+        <span class="node-count" id="nodeCount">0 nodes</span>
+        <button class="btn-secondary small" onclick="exportMap()">⬇ Export SVG</button>
+      </div>
+    </div>
+    <div class="map-container">
+      <canvas id="conceptCanvas"></canvas>
+      <div id="nodeTooltip" class="node-tooltip hidden"></div>
+    </div>
+    <div class="legend">
+      <span class="legend-item"><span class="dot concept"></span>Core Concept</span>
+      <span class="legend-item"><span class="dot method"></span>Method</span>
+      <span class="legend-item"><span class="dot result"></span>Result</span>
+      <span class="legend-item"><span class="dot entity"></span>Entity</span>
+    </div>
+  </section>
+
+  <!-- ── SUMMARY VIEW ── -->
+  <section id="view-summary" class="view">
+    <div class="summary-container">
+      <div class="summary-header">
+        <h2 id="paperTitle">Paper Analysis</h2>
+        <div class="summary-meta" id="summaryMeta"></div>
+      </div>
+      <div class="summary-grid">
+        <div class="summary-card card-highlight">
+          <h3>🎯 Core Contribution</h3>
+          <p id="coreContrib"></p>
+        </div>
+        <div class="summary-card">
+          <h3>🔬 Methodology</h3>
+          <ul id="methodList"></ul>
+        </div>
+        <div class="summary-card">
+          <h3>📊 Key Results</h3>
+          <ul id="resultList"></ul>
+        </div>
+        <div class="summary-card">
+          <h3>🏷️ Key Terms</h3>
+          <div id="termTags" class="tag-cloud"></div>
+        </div>
+      </div>
+      <div class="summary-card full-width">
+        <h3>🔗 Concept Relationships</h3>
+        <div id="relationshipList" class="relation-grid"></div>
+      </div>
+    </div>
+  </section>
+
+  <script src="app.js"></script>
+</body>
 </html>
