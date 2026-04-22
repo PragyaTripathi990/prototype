@@ -413,9 +413,15 @@ function renderMap() {
     ctx.lineWidth = isHovered ? 3 : 2;
     ctx.stroke();
 
-    const maxLen = 16;
-    const label = n.label.length > maxLen ? n.label.slice(0, maxLen-1) + '…' : n.label;
-    ctx.font = `${isHovered ? 700 : 600} ${Math.max(10, Math.min(n.radius * 0.6, 14))}px Inter`;
+    const maxLen = 15;
+    const label = n.label.length > maxLen ? n.label.slice(0, maxLen-2) + '..' : n.label;
+    ctx.font = `${isHovered ? 700 : 500} ${Math.max(10, Math.min(n.radius * 0.55, 13))}px Inter`;
+    
+    // Label background for readability
+    const textWidth = ctx.measureText(label).width;
+    ctx.fillStyle = 'rgba(8, 12, 20, 0.7)';
+    ctx.fillRect(n.x - textWidth/2 - 4, n.y - 7, textWidth + 8, 14);
+
     ctx.fillStyle = '#f8fafc';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
