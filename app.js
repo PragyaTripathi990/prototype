@@ -5,6 +5,11 @@
 
 'use strict';
 
+// ── PDF.js Worker ──────────────────────────────────────
+if (window.pdfjsLib) {
+  pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.worker.min.js';
+}
+
 // ── State ──────────────────────────────────────────────
 const state = {
   nodes: [],
@@ -254,68 +259,83 @@ function buildGraph(analysis) {
   state.zoom = 1; state.panX = 0; state.panY = 0;
 
   document.getElementById('nodeCount').textContent = `${state.nodes.length} nodes · ${state.edges.length} links`;
+  
+  // Reset simulation
+  if (state.animFrame) cancelAnimationFrame(state.animFrame);
   runSimulation();
 }
 
 // ── Force-directed simulation ──────────────────────────
 function runSimulation() {
-  let alpha = 1;
+  let alpha = 1.0;
+  const cooling = 0.965;
 
   function tick() {
-    if (alpha < 0.005) { renderMap(); return; }
-    alpha *= 0.97;
+    if (alpha < 0.01) { 
+      state.animFrame = null;
+      renderMap(); 
+      return; 
+    }
+    alpha *= cooling;
 
     const nodes = state.nodes;
     const canvas = document.getElementById('conceptCanvas');
-    const W = canvas.parentElement.clientWidth;
-    const H = canvas.parentElement.clientHeight;
+    const W = canvas.offsetWidth;
+    const H = canvas.offsetHeight;
 
-    // Repulsion
+    // Repulsion (Anti-gravity)
     for (let i = 0; i < nodes.length; i++) {
       for (let j = i + 1; j < nodes.length; j++) {
         const dx = nodes[j].x - nodes[i].x;
         const dy = nodes[j].y - nodes[i].y;
-        const dist = Math.sqrt(dx * dx + dy * dy) || 1;
-        const force = (3000 / (dist * dist)) * alpha;
-        const fx = (dx / dist) * force;
-        const fy = (dy / dist) * force;
-        nodes[i].vx -= fx; nodes[i].vy -= fy;
-        nodes[j].vx += fx; nodes[j].vy += fy;
+        const distSq = dx * dx + dy * dy || 1;
+        const dist = Math.sqrt(distSq);
+        const strength = (8000 / distSq) * alpha; // Increased from 5000
+        nodes[i].vx -= (dx / dist) * strength;
+        nodes[i].vy -= (dy / dist) * strength;
+        nodes[j].vx += (dx / dist) * strength;
+        nodes[j].vy += (dy / dist) * strength;
       }
     }
 
-    // Attraction along edges
+    // Attraction (Springs)
     state.edges.forEach(e => {
-      const s = nodes[e.source]; const t = nodes[e.target];
+      const s = nodes[e.source];
+      const t = nodes[e.target];
       if (!s || !t) return;
-      const dx = t.x - s.x; const dy = t.y - s.y;
+      const dx = t.x - s.x;
+      const dy = t.y - s.y;
       const dist = Math.sqrt(dx * dx + dy * dy) || 1;
-      const ideal = 180;
-      const force = (dist - ideal) * 0.04 * alpha;
-      const fx = (dx / dist) * force; const fy = (dy / dist) * force;
-      s.vx += fx; s.vy += fy;
-      t.vx -= fx; t.vy -= fy;
+      const ideal = 200; // Increased from 160
+      const stiffness = 0.05 * alpha;
+      const force = (dist - ideal) * stiffness;
+      s.vx += (dx / dist) * force;
+      s.vy += (dy / dist) * force;
+      t.vx -= (dx / dist) * force;
+      t.vy -= (dy / dist) * force;
     });
 
-    // Center gravity
+    // Center Gravity & Boundary
     nodes.forEach(n => {
-      n.vx += (W / 2 - n.x) * 0.008 * alpha;
-      n.vy += (H / 2 - n.y) * 0.008 * alpha;
-    });
-
-    // Apply & dampen
-    nodes.forEach(n => {
-      n.vx *= 0.82; n.vy *= 0.82;
+      n.vx += (W / 2 - n.x) * 0.012 * alpha;
+      n.vy += (H / 2 - n.y) * 0.012 * alpha;
+      
+      n.vx *= 0.8; n.vy *= 0.8;
       n.x += n.vx; n.y += n.vy;
-      n.x = Math.max(n.radius + 10, Math.min(W - n.radius - 10, n.x));
-      n.y = Math.max(n.radius + 10, Math.min(H - n.radius - 10, n.y));
+      
+      // Keep in bounds
+      const margin = n.radius + 20;
+      if (n.x < margin) n.x = margin;
+      if (n.x > W - margin) n.x = W - margin;
+      if (n.y < margin) n.y = margin;
+      if (n.y > H - margin) n.y = H - margin;
     });
 
     renderMap();
-    requestAnimationFrame(tick);
+    state.animFrame = requestAnimationFrame(tick);
   }
 
-  requestAnimationFrame(tick);
+  state.animFrame = requestAnimationFrame(tick);
 }
 
 // ── Canvas rendering ───────────────────────────────────
@@ -329,12 +349,21 @@ const COLORS = {
 function renderMap() {
   const canvas = document.getElementById('conceptCanvas');
   if (!canvas) return;
-  const rect = canvas.parentElement.getBoundingClientRect();
-  canvas.width  = rect.width;
-  canvas.height = rect.height;
   const ctx = canvas.getContext('2d');
+  
+  // High-DPI Support
+  const dpr = window.devicePixelRatio || 1;
+  const rect = canvas.parentElement.getBoundingClientRect();
+  if (canvas.width !== Math.floor(rect.width * dpr) || canvas.height !== Math.floor(rect.height * dpr)) {
+    canvas.width = rect.width * dpr;
+    canvas.height = rect.height * dpr;
+    canvas.style.width = rect.width + 'px';
+    canvas.style.height = rect.height + 'px';
+  }
 
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
   ctx.save();
+  ctx.scale(dpr, dpr);
   ctx.translate(state.panX, state.panY);
   ctx.scale(state.zoom, state.zoom);
 
@@ -347,15 +376,14 @@ function renderMap() {
     ctx.beginPath();
     ctx.moveTo(s.x, s.y);
     ctx.lineTo(t.x, t.y);
-    ctx.strokeStyle = `rgba(79,142,247,${Math.min(e.weight * 0.12 + 0.08, 0.35)})`;
-    ctx.lineWidth = Math.min(e.weight * 0.8 + 0.5, 3);
+    ctx.strokeStyle = `rgba(79,142,247,${Math.min(e.weight * 0.15 + 0.1, 0.4)})`;
+    ctx.lineWidth = Math.min(e.weight * 1.0 + 0.5, 4);
     ctx.stroke();
 
-    // Midpoint label
-    if (e.weight > 1) {
+    if (e.weight > 1 && state.zoom > 0.7) {
       const mx = (s.x + t.x) / 2; const my = (s.y + t.y) / 2;
-      ctx.font = '9px Inter';
-      ctx.fillStyle = 'rgba(100,116,139,0.7)';
+      ctx.font = '10px Inter';
+      ctx.fillStyle = 'rgba(148, 163, 184, 0.8)';
       ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
       ctx.fillText(e.label, mx, my);
     }
@@ -366,32 +394,29 @@ function renderMap() {
     const c = COLORS[n.category] || COLORS.concept;
     const isHovered = n === state.hoveredNode;
 
-    // Glow
     if (isHovered) {
       ctx.save();
       ctx.shadowColor = c.glow;
-      ctx.shadowBlur = 24;
+      ctx.shadowBlur = 30;
       ctx.beginPath();
-      ctx.arc(n.x, n.y, n.radius + 4, 0, Math.PI * 2);
+      ctx.arc(n.x, n.y, n.radius + 6, 0, Math.PI * 2);
       ctx.fillStyle = c.fill;
       ctx.fill();
       ctx.restore();
     }
 
-    // Circle
     ctx.beginPath();
-    ctx.arc(n.x, n.y, n.radius + (isHovered ? 4 : 0), 0, Math.PI * 2);
+    ctx.arc(n.x, n.y, n.radius + (isHovered ? 6 : 0), 0, Math.PI * 2);
     ctx.fillStyle = c.fill;
     ctx.fill();
     ctx.strokeStyle = c.stroke;
-    ctx.lineWidth = isHovered ? 2.5 : 1.5;
+    ctx.lineWidth = isHovered ? 3 : 2;
     ctx.stroke();
 
-    // Label
-    const maxLen = 14;
-    const label = n.label.length > maxLen ? n.label.slice(0, maxLen) + '…' : n.label;
-    ctx.font = `${isHovered ? 600 : 500} ${Math.max(9, Math.min(n.radius * 0.55, 13))}px Inter`;
-    ctx.fillStyle = '#e2e8f0';
+    const maxLen = 16;
+    const label = n.label.length > maxLen ? n.label.slice(0, maxLen-1) + '…' : n.label;
+    ctx.font = `${isHovered ? 700 : 600} ${Math.max(10, Math.min(n.radius * 0.6, 14))}px Inter`;
+    ctx.fillStyle = '#f8fafc';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText(label, n.x, n.y);
@@ -594,17 +619,50 @@ function initFileUpload() {
 }
 
 function readFile(file) {
-  const reader = new FileReader();
-  reader.onload = evt => {
-    document.getElementById('pasteText').value = evt.target.result.slice(0, 8000);
-    analyze();
-  };
   if (file.type === 'application/pdf') {
-    // Can't parse PDF natively; show prompt
-    alert('PDF parsing requires a library. For now, paste the paper text directly. (PDF support coming soon!)');
+    const reader = new FileReader();
+    reader.onload = async function() {
+      const typedarray = new Uint8Array(this.result);
+      showLoading();
+      document.getElementById('loadingStatus').textContent = 'Initialising PDF engine...';
+      
+      try {
+        const text = await extractTextFromPDF(typedarray);
+        document.getElementById('pasteText').value = text;
+        analyze();
+      } catch (err) {
+        alert('Failed to parse PDF: ' + err.message);
+        hideLoading();
+      }
+    };
+    reader.readAsArrayBuffer(file);
   } else {
+    const reader = new FileReader();
+    reader.onload = evt => {
+      document.getElementById('pasteText').value = evt.target.result.slice(0, 15000);
+      analyze();
+    };
     reader.readAsText(file);
   }
+}
+
+async function extractTextFromPDF(data) {
+  const pdf = await pdfjsLib.getDocument(data).promise;
+  let fullText = "";
+  const maxPages = Math.min(pdf.numPages, 10); // Limit to 10 pages for prototype
+  
+  for (let i = 1; i <= maxPages; i++) {
+    const page = await pdf.getPage(i);
+    const content = await page.getTextContent();
+    const strings = content.items.map(item => item.str);
+    fullText += strings.join(" ") + "\n\n";
+    
+    // Update loading progress
+    const progress = Math.round((i / maxPages) * 100);
+    document.getElementById('loadingStatus').textContent = `Reading PDF page ${i}/${maxPages} (${progress}%)`;
+    document.getElementById('progressFill').style.width = progress + '%';
+  }
+  return fullText;
 }
 
 // ── Simulate progress delay  ───────────────────────────
